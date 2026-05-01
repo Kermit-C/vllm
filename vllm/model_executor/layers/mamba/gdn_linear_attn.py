@@ -169,7 +169,29 @@ class ChunkGatedDeltaRule(CustomOp):
         chunk_indices: torch.Tensor | None = None,
         chunk_offsets: torch.Tensor | None = None,
         use_qk_l2norm_in_kernel: bool = True,
+        ssm_state_indices: torch.Tensor | None = None,
     ):
+        if ssm_state_indices is not None:
+            N = len(cu_seqlens) - 1
+            seq_indices = ssm_state_indices[:N]
+            gathered_initial = initial_state[seq_indices].contiguous().clone()
+            o, final_state = fi_chunk_gated_delta_rule(
+                q=q,
+                k=k,
+                v=v,
+                g=g,
+                beta=beta,
+                initial_state=gathered_initial,
+                output_final_state=output_final_state,
+                cu_seqlens=cu_seqlens,
+                use_qk_l2norm_in_kernel=use_qk_l2norm_in_kernel,
+            )
+            if output_final_state:
+                valid_mask = seq_indices > 0
+                initial_state[seq_indices[valid_mask]] = final_state[valid_mask].to(
+                    initial_state.dtype
+                )
+            return o, final_state
         return fi_chunk_gated_delta_rule(
             q=q,
             k=k,
@@ -195,6 +217,7 @@ class ChunkGatedDeltaRule(CustomOp):
         chunk_indices: torch.Tensor | None = None,
         chunk_offsets: torch.Tensor | None = None,
         use_qk_l2norm_in_kernel: bool = True,
+        ssm_state_indices: torch.Tensor | None = None,
     ):
         return fla_chunk_gated_delta_rule(
             q=q,
@@ -208,6 +231,7 @@ class ChunkGatedDeltaRule(CustomOp):
             chunk_indices=chunk_indices,
             chunk_offsets=chunk_offsets,
             use_qk_l2norm_in_kernel=use_qk_l2norm_in_kernel,
+            ssm_state_indices=ssm_state_indices,
         )
 
 

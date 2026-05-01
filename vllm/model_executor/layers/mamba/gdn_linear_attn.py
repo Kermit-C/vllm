@@ -172,9 +172,7 @@ class ChunkGatedDeltaRule(CustomOp):
         ssm_state_indices: torch.Tensor | None = None,
     ):
         if ssm_state_indices is not None:
-            N = len(cu_seqlens) - 1
-            seq_indices = ssm_state_indices[:N]
-            gathered_initial = initial_state[seq_indices].contiguous().clone()
+            gathered_initial = initial_state[ssm_state_indices].contiguous()
             o, final_state = fi_chunk_gated_delta_rule(
                 q=q,
                 k=k,
@@ -187,10 +185,7 @@ class ChunkGatedDeltaRule(CustomOp):
                 use_qk_l2norm_in_kernel=use_qk_l2norm_in_kernel,
             )
             if output_final_state:
-                valid_mask = seq_indices > 0
-                initial_state[seq_indices[valid_mask]] = final_state[valid_mask].to(
-                    initial_state.dtype
-                )
+                initial_state[ssm_state_indices] = final_state.to(initial_state.dtype)
             return o, final_state
         return fi_chunk_gated_delta_rule(
             q=q,
@@ -974,9 +969,8 @@ class GatedDeltaNetAttention(PluggableLayer, MambaBase):
             # Zero out state for NEW sequences (no prior KV state)
             if has_initial_state is not None:
                 zero_mask = ~has_initial_state
-                if zero_mask.any():
-                    zero_indices = non_spec_state_indices_tensor[zero_mask]
-                    ssm_state[zero_indices] = 0
+                zero_indices = non_spec_state_indices_tensor[zero_mask]
+                ssm_state[zero_indices] = 0
 
             # In-place chunk: passes ssm_state directly; no gather/scatter
             (

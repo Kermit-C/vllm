@@ -947,9 +947,14 @@ class GatedDeltaNetAttention(PluggableLayer, MambaBase):
         # 2.2: Process the remaining part
         if attn_metadata.num_prefills > 0:
             assert non_spec_state_indices_tensor is not None
-            initial_state = ssm_state[non_spec_state_indices_tensor].contiguous()  # type: ignore[index]
-            assert has_initial_state is not None
-            initial_state[~has_initial_state, ...] = 0  # type: ignore[operator]
+            # Zero out state for NEW sequences (no prior KV state)
+            if has_initial_state is not None:
+                zero_mask = ~has_initial_state
+                if zero_mask.any():
+                    zero_indices = non_spec_state_indices_tensor[zero_mask]
+                    ssm_state[zero_indices] = 0
+
+            # In-place chunk: passes ssm_state directly; no gather/scatter
             (
                 core_attn_out_non_spec,
                 last_recurrent_state,
@@ -959,17 +964,15 @@ class GatedDeltaNetAttention(PluggableLayer, MambaBase):
                 v=value_non_spec,
                 g=g_non_spec,
                 beta=beta_non_spec,
-                initial_state=initial_state,
+                initial_state=ssm_state,
                 output_final_state=True,
                 cu_seqlens=non_spec_query_start_loc,
                 chunk_indices=attn_metadata.chunk_indices,
                 chunk_offsets=attn_metadata.chunk_offsets,
                 use_qk_l2norm_in_kernel=False,
+                ssm_state_indices=non_spec_state_indices_tensor,
             )
-            # Init cache
-            ssm_state[non_spec_state_indices_tensor] = last_recurrent_state.to(
-                ssm_state.dtype
-            )
+            # No scatter — state already updated in-place
         elif attn_metadata.num_decodes > 0:
             core_attn_out_non_spec, last_recurrent_state = (
                 fused_sigmoid_gating_delta_rule_update(

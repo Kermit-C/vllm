@@ -32,6 +32,7 @@ def chunk_gated_delta_rule_fwd(
     cu_seqlens: torch.Tensor | None = None,
     chunk_indices: torch.Tensor | None = None,
     chunk_offsets: torch.Tensor | None = None,
+    ssm_state_indices: torch.Tensor | None = None,
 ):
     g = chunk_local_cumsum(
         g, chunk_size=FLA_CHUNK_SIZE, cu_seqlens=cu_seqlens, chunk_indices=chunk_indices
@@ -67,6 +68,7 @@ def chunk_gated_delta_rule_fwd(
         cu_seqlens=cu_seqlens,
         chunk_indices=chunk_indices,
         chunk_offsets=chunk_offsets,
+        ssm_state_indices=ssm_state_indices,
     )
     o = chunk_fwd_o(
         q=q,
@@ -102,6 +104,7 @@ class ChunkGatedDeltaRuleFunction(torch.autograd.Function):
         chunk_indices: torch.Tensor | None = None,
         chunk_offsets: torch.Tensor | None = None,
         use_qk_l2norm_in_kernel: bool = False,
+        ssm_state_indices: torch.Tensor | None = None,
     ):
         if use_qk_l2norm_in_kernel:
             q = l2norm_fwd(q)
@@ -119,6 +122,7 @@ class ChunkGatedDeltaRuleFunction(torch.autograd.Function):
             cu_seqlens=cu_seqlens,
             chunk_indices=chunk_indices,
             chunk_offsets=chunk_offsets,
+            ssm_state_indices=ssm_state_indices,
         )
         ctx.scale = scale
         ctx.use_qk_l2norm_in_kernel = use_qk_l2norm_in_kernel
@@ -139,6 +143,7 @@ def chunk_gated_delta_rule(
     chunk_indices: torch.Tensor | None = None,
     chunk_offsets: torch.Tensor | None = None,
     use_qk_l2norm_in_kernel: bool = False,
+    ssm_state_indices: torch.Tensor | None = None,
 ):
     r"""
     Args:
@@ -210,7 +215,11 @@ def chunk_gated_delta_rule(
                 f"The batch size is expected to be 1 rather than {q.shape[0]} when using `cu_seqlens`."
                 f"Please flatten variable-length inputs before processing."
             )
-        if initial_state is not None and initial_state.shape[0] != len(cu_seqlens) - 1:
+        if (
+            initial_state is not None
+            and ssm_state_indices is None
+            and initial_state.shape[0] != len(cu_seqlens) - 1
+        ):
             raise ValueError(
                 f"The number of initial states is expected to be equal to the number of input sequences, "
                 f"i.e., {len(cu_seqlens) - 1} rather than {initial_state.shape[0]}."
@@ -230,5 +239,6 @@ def chunk_gated_delta_rule(
         chunk_indices,
         chunk_offsets,
         use_qk_l2norm_in_kernel,
+        ssm_state_indices,
     )
     return o, final_state

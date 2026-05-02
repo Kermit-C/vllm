@@ -358,17 +358,13 @@ def chunk_gated_delta_rule_fwd_h(
         stride_init_state_token = initial_state.stride(0)
         stride_final_state_token = initial_state.stride(0)
         final_state = initial_state if output_final_state else None
-        # Return a small placeholder — caller discards it, and returning
-        # the full ssm_state can cause overhead in the autograd path.
-        ret_final_state = k.new_empty(N, H, V, K, dtype=torch.float32) if output_final_state else None
     else:
         stride_indices_seq = 1
         stride_init_state_token = 1
         stride_final_state_token = 1
-        ret_final_state = (
+        final_state = (
             k.new_empty(N, H, V, K, dtype=torch.float32) if output_final_state else None
         )
-        final_state = ret_final_state
 
     h = k.new_empty(B, NT, H, V, K)
 
@@ -400,4 +396,4 @@ def chunk_gated_delta_rule_fwd_h(
         stride_final_state_token=stride_final_state_token,
         stride_indices_seq=stride_indices_seq,
     )
-    return h, v_new, ret_final_state
+    return h, v_new, final_state

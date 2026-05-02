@@ -966,8 +966,10 @@ class GatedDeltaNetAttention(PluggableLayer, MambaBase):
         # 2.2: Process the remaining part
         if attn_metadata.num_prefills > 0:
             assert non_spec_state_indices_tensor is not None
-            # In-place chunk: kernel skips loading initial state for new
-            # sequences (state_idx <= 0), so no explicit zeroing is needed.
+            assert has_initial_state is not None
+            zero_indices = non_spec_state_indices_tensor[~has_initial_state]
+            ssm_state[zero_indices] = 0
+
             (
                 core_attn_out_non_spec,
                 last_recurrent_state,
@@ -985,7 +987,6 @@ class GatedDeltaNetAttention(PluggableLayer, MambaBase):
                 use_qk_l2norm_in_kernel=False,
                 ssm_state_indices=non_spec_state_indices_tensor,
             )
-            # No scatter — state already updated in-place
         elif attn_metadata.num_decodes > 0:
             core_attn_out_non_spec, last_recurrent_state = (
                 fused_sigmoid_gating_delta_rule_update(

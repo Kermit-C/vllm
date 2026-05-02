@@ -88,7 +88,6 @@ def chunk_gated_delta_rule_fwd(
 
 class ChunkGatedDeltaRuleFunction(torch.autograd.Function):
     @staticmethod
-    @input_guard
     @torch.amp.custom_fwd(device_type="cuda")
     def forward(
         ctx,
@@ -106,27 +105,41 @@ class ChunkGatedDeltaRuleFunction(torch.autograd.Function):
         use_qk_l2norm_in_kernel: bool = False,
         ssm_state_indices: torch.Tensor | None = None,
     ):
-        if use_qk_l2norm_in_kernel:
-            q = l2norm_fwd(q)
-            k = l2norm_fwd(k)
+        # Manually ensure contiguity instead of using @input_guard.
+        # We skip .contiguous() on initial_state when ssm_state_indices
+        # is provided: the kernel handles non-contiguous tensors via
+        # strides, and forcing contiguity on a large SSM cache view
+        # is expensive (44 MB copy per layer per prefill).
+        q = q.contiguous()
+        k = k.contiguous()
+        v = v.contiguous()
+        g = g.contiguous()
+        beta = beta.contiguous()
+        if ssm_state_indices is None and initial_state is not None:
+            initial_state = initial_state.contiguous()
 
-        g, o, A, final_state, w, h, v_new = chunk_gated_delta_rule_fwd(
-            q=q,
-            k=k,
-            v=v,
-            g=g,
-            beta=beta,
-            scale=scale,
-            initial_state=initial_state,
-            output_final_state=output_final_state,
-            cu_seqlens=cu_seqlens,
-            chunk_indices=chunk_indices,
-            chunk_offsets=chunk_offsets,
-            ssm_state_indices=ssm_state_indices,
-        )
-        ctx.scale = scale
-        ctx.use_qk_l2norm_in_kernel = use_qk_l2norm_in_kernel
-        return o.to(q.dtype), final_state
+        with torch.accelerator.device_index(q.device.index):
+            if use_qk_l2norm_in_kernel:
+                q = l2norm_fwd(q)
+                k = l2norm_fwd(k)
+
+            g, o, A, final_state, w, h, v_new = chunk_gated_delta_rule_fwd(
+                q=q,
+                k=k,
+                v=v,
+                g=g,
+                beta=beta,
+                scale=scale,
+                initial_state=initial_state,
+                output_final_state=output_final_state,
+                cu_seqlens=cu_seqlens,
+                chunk_indices=chunk_indices,
+                chunk_offsets=chunk_offsets,
+                ssm_state_indices=ssm_state_indices,
+            )
+            ctx.scale = scale
+            ctx.use_qk_l2norm_in_kernel = use_qk_l2norm_in_kernel
+            return o.to(q.dtype), final_state
 
 
 @torch.compiler.disable

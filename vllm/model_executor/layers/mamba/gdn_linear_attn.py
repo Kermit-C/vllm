@@ -966,13 +966,8 @@ class GatedDeltaNetAttention(PluggableLayer, MambaBase):
         # 2.2: Process the remaining part
         if attn_metadata.num_prefills > 0:
             assert non_spec_state_indices_tensor is not None
-            # Zero out state for NEW sequences (no prior KV state)
-            if has_initial_state is not None:
-                zero_mask = ~has_initial_state
-                zero_indices = non_spec_state_indices_tensor[zero_mask]
-                ssm_state[zero_indices] = 0
-
-            # In-place chunk: passes ssm_state directly; no gather/scatter
+            # In-place chunk: kernel skips loading initial state for new
+            # sequences (state_idx <= 0), so no explicit zeroing is needed.
             (
                 core_attn_out_non_spec,
                 last_recurrent_state,

@@ -170,34 +170,26 @@ class ChunkGatedDeltaRule(CustomOp):
         chunk_offsets: torch.Tensor | None = None,
         use_qk_l2norm_in_kernel: bool = True,
         ssm_state_indices: torch.Tensor | None = None,
+        has_initial_state: torch.Tensor | None = None,
     ):
         if ssm_state_indices is not None:
+            assert has_initial_state is not None
             gathered_initial = initial_state[ssm_state_indices].contiguous()
-            o, final_state = fi_chunk_gated_delta_rule(
-                q=q,
-                k=k,
-                v=v,
-                g=g,
-                beta=beta,
-                initial_state=gathered_initial,
-                output_final_state=output_final_state,
-                cu_seqlens=cu_seqlens,
-                use_qk_l2norm_in_kernel=use_qk_l2norm_in_kernel,
-            )
-            if output_final_state:
-                initial_state[ssm_state_indices] = final_state.to(initial_state.dtype)
-            return o, final_state
-        return fi_chunk_gated_delta_rule(
+            gathered_initial[~has_initial_state] = 0
+        o, final_state = fi_chunk_gated_delta_rule(
             q=q,
             k=k,
             v=v,
             g=g,
             beta=beta,
-            initial_state=initial_state,
+            initial_state=gathered_initial,
             output_final_state=output_final_state,
             cu_seqlens=cu_seqlens,
             use_qk_l2norm_in_kernel=use_qk_l2norm_in_kernel,
         )
+        if ssm_state_indices is not None and output_final_state:
+            initial_state[ssm_state_indices] = final_state.to(initial_state.dtype)
+        return o, final_state
 
     def forward_native(
         self,
@@ -213,6 +205,7 @@ class ChunkGatedDeltaRule(CustomOp):
         chunk_offsets: torch.Tensor | None = None,
         use_qk_l2norm_in_kernel: bool = True,
         ssm_state_indices: torch.Tensor | None = None,
+        has_initial_state: torch.Tensor | None = None,
     ):
         return fla_chunk_gated_delta_rule(
             q=q,
@@ -227,6 +220,7 @@ class ChunkGatedDeltaRule(CustomOp):
             chunk_offsets=chunk_offsets,
             use_qk_l2norm_in_kernel=use_qk_l2norm_in_kernel,
             ssm_state_indices=ssm_state_indices,
+            has_initial_state=has_initial_state,
         )
 
 
@@ -965,11 +959,6 @@ class GatedDeltaNetAttention(PluggableLayer, MambaBase):
 
         # 2.2: Process the remaining part
         if attn_metadata.num_prefills > 0:
-            assert non_spec_state_indices_tensor is not None
-            assert has_initial_state is not None
-            zero_indices = non_spec_state_indices_tensor[~has_initial_state]
-            ssm_state[zero_indices] = 0
-
             (
                 core_attn_out_non_spec,
                 last_recurrent_state,
@@ -986,6 +975,7 @@ class GatedDeltaNetAttention(PluggableLayer, MambaBase):
                 chunk_offsets=attn_metadata.chunk_offsets,
                 use_qk_l2norm_in_kernel=False,
                 ssm_state_indices=non_spec_state_indices_tensor,
+                has_initial_state=has_initial_state,
             )
         elif attn_metadata.num_decodes > 0:
             core_attn_out_non_spec, last_recurrent_state = (

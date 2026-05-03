@@ -108,16 +108,17 @@ def chunk_gated_delta_rule_fwd_kernel_h_blockdim64(
     stride_k = Hg * K
     stride_w = H * K
     if USE_INITIAL_STATE:
-        h0 = h0 + i_nh * V * K
         should_load = True
         if IS_CONTINUOUS_BATCHING:
             state_idx = tl.load(
                 ssm_state_indices + i_n * stride_indices_seq
             ).to(tl.int64)
             if state_idx > 0:
-                h0 = h0 + (state_idx - i_n) * stride_init_state_token
+                h0 = h0 + state_idx * stride_init_state_token + i_h * V * K
             else:
                 should_load = False
+        else:
+            h0 = h0 + i_nh * V * K
         if should_load:
             p_h0_1 = tl.make_block_ptr(h0, (V, K), (K, 1), (i_v * BV, 0), (BV, 64), (1, 0))
             b_h1 += tl.load(p_h0_1, boundary_check=(0, 1)).to(tl.float32)
@@ -439,7 +440,7 @@ def chunk_gated_delta_rule_fwd_kernel_h_blockdim64(
                 ssm_state_indices + i_n * stride_indices_seq
             ).to(tl.int64)
             if state_idx > 0:
-                ht = ht + (state_idx - i_n) * stride_final_state_token + i_nh * V * K
+                ht = ht + state_idx * stride_final_state_token + i_h * V * K
             else:
                 should_store = False
         else:

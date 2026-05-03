@@ -176,20 +176,31 @@ class ChunkGatedDeltaRule(CustomOp):
             assert has_initial_state is not None
             gathered_initial = initial_state[ssm_state_indices].contiguous()
             gathered_initial[~has_initial_state] = 0
-        o, final_state = fi_chunk_gated_delta_rule(
+            o, final_state = fi_chunk_gated_delta_rule(
+                q=q,
+                k=k,
+                v=v,
+                g=g,
+                beta=beta,
+                initial_state=gathered_initial,
+                output_final_state=output_final_state,
+                cu_seqlens=cu_seqlens,
+                use_qk_l2norm_in_kernel=use_qk_l2norm_in_kernel,
+            )
+            if output_final_state:
+                initial_state[ssm_state_indices] = final_state.to(initial_state.dtype)
+            return o, final_state
+        return fi_chunk_gated_delta_rule(
             q=q,
             k=k,
             v=v,
             g=g,
             beta=beta,
-            initial_state=gathered_initial,
+            initial_state=initial_state,
             output_final_state=output_final_state,
             cu_seqlens=cu_seqlens,
             use_qk_l2norm_in_kernel=use_qk_l2norm_in_kernel,
         )
-        if ssm_state_indices is not None and output_final_state:
-            initial_state[ssm_state_indices] = final_state.to(initial_state.dtype)
-        return o, final_state
 
     def forward_native(
         self,

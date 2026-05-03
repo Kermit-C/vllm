@@ -138,10 +138,12 @@ def chunk_gated_delta_rule_fwd_kernel_h_blockdim64(
                 b_h4 += tl.load(p_h0_4, boundary_check=(0, 1)).to(tl.float32)
 
     # main recurrence
-    if T <= BT:
-        # Fast path: single chunk with partial time-dimension utilization.
+    if T == 1:
+        # Fast path: single token, avoid loading BT-sized blocks.
         # Block sizes in the time dimension are reduced from BT to 1,
         # avoiding ~63/64 wasted loads and matmul operations for T=1.
+        # Broadcasting outer product is used for the k@v update instead
+        # of tl.dot since the contraction dimension is 1 (< 16).
 
         # store hidden state for this chunk (same as original loop i_t=0)
         p_h1 = tl.make_block_ptr(

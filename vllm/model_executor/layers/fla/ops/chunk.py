@@ -16,7 +16,7 @@ from .chunk_scaled_dot_kkt import chunk_scaled_dot_kkt_fwd
 from .cumsum import chunk_local_cumsum
 from .l2norm import l2norm_fwd
 from .solve_tril import solve_tril
-from .utils import FLA_CHUNK_SIZE, SUPPRESS_LEVEL, input_guard
+from .utils import FLA_CHUNK_SIZE, SUPPRESS_LEVEL
 from .wy_fast import recompute_w_u_fwd
 
 

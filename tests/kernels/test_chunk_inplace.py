@@ -1,4 +1,5 @@
 import torch
+
 from vllm.model_executor.layers.fla.ops.chunk import chunk_gated_delta_rule
 
 
@@ -15,13 +16,16 @@ def _make_inputs(N, T_per_seq, H, K, V, max_blocks, device='cuda', seed=42):
     g = torch.randn(1, total_T, H, device=device, dtype=torch.float32) * 0.1
     # beta is sigmoid-activated — already in [0,1]
     beta = torch.rand(1, total_T, H, device=device, dtype=torch.float32).sigmoid()
-    cu_seqlens = torch.arange(0, total_T + 1, T_per_seq, device=device, dtype=torch.int32)
-    ssm_state = torch.randn(max_blocks, H, V, K, device=device, dtype=torch.float32) * 0.1
+    cu_seqlens = torch.arange(0, total_T + 1, T_per_seq,
+                               device=device, dtype=torch.int32)
+    ssm_state = torch.randn(max_blocks, H, V, K,
+                            device=device, dtype=torch.float32) * 0.1
     return q, k, v, g, beta, cu_seqlens, ssm_state
 
 
 def test_chunk_ssm_state_indices_correctness():
-    """Verify in-place (ssm_state_indices) produces identical results to gather/scatter."""
+    """Verify in-place (ssm_state_indices) produces identical results
+    to gather/scatter."""
     N, T_per_seq, H, K, V = 4, 256, 8, 128, 128
     max_blocks = 16
     q, k, v, g, beta, cu_seqlens, ssm_state = _make_inputs(

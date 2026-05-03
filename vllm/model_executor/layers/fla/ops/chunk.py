@@ -33,6 +33,7 @@ def chunk_gated_delta_rule_fwd(
     chunk_indices: torch.Tensor | None = None,
     chunk_offsets: torch.Tensor | None = None,
     ssm_state_indices: torch.Tensor | None = None,
+    has_initial_state: torch.Tensor | None = None,
 ):
     g = chunk_local_cumsum(
         g, chunk_size=FLA_CHUNK_SIZE, cu_seqlens=cu_seqlens, chunk_indices=chunk_indices
@@ -69,6 +70,7 @@ def chunk_gated_delta_rule_fwd(
         chunk_indices=chunk_indices,
         chunk_offsets=chunk_offsets,
         ssm_state_indices=ssm_state_indices,
+        has_initial_state=has_initial_state,
     )
     o = chunk_fwd_o(
         q=q,
@@ -104,6 +106,7 @@ class ChunkGatedDeltaRuleFunction(torch.autograd.Function):
         chunk_offsets: torch.Tensor | None = None,
         use_qk_l2norm_in_kernel: bool = False,
         ssm_state_indices: torch.Tensor | None = None,
+        has_initial_state: torch.Tensor | None = None,
     ):
         # Manually ensure contiguity instead of using @input_guard.
         # We skip .contiguous() on initial_state when ssm_state_indices
@@ -119,6 +122,7 @@ class ChunkGatedDeltaRuleFunction(torch.autograd.Function):
         chunk_indices = chunk_indices.contiguous() if chunk_indices is not None else None
         chunk_offsets = chunk_offsets.contiguous() if chunk_offsets is not None else None
         ssm_state_indices = ssm_state_indices.contiguous() if ssm_state_indices is not None else None
+        has_initial_state = has_initial_state.contiguous() if has_initial_state is not None else None
         if ssm_state_indices is None and initial_state is not None:
             initial_state = initial_state.contiguous()
 
@@ -140,6 +144,7 @@ class ChunkGatedDeltaRuleFunction(torch.autograd.Function):
                 chunk_indices=chunk_indices,
                 chunk_offsets=chunk_offsets,
                 ssm_state_indices=ssm_state_indices,
+                has_initial_state=has_initial_state,
             )
             ctx.scale = scale
             ctx.use_qk_l2norm_in_kernel = use_qk_l2norm_in_kernel
@@ -161,6 +166,7 @@ def chunk_gated_delta_rule(
     chunk_offsets: torch.Tensor | None = None,
     use_qk_l2norm_in_kernel: bool = False,
     ssm_state_indices: torch.Tensor | None = None,
+    has_initial_state: torch.Tensor | None = None,
 ):
     r"""
     Args:
@@ -257,5 +263,6 @@ def chunk_gated_delta_rule(
         chunk_offsets,
         use_qk_l2norm_in_kernel,
         ssm_state_indices,
+        has_initial_state,
     )
     return o, final_state

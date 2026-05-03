@@ -28,6 +28,7 @@ NUM_WARPS = [2, 4, 8, 16]
         "SAVE_NEW_VALUE": lambda args: args["v_new"] is not None,
         "IS_VARLEN": lambda args: args["cu_seqlens"] is not None,
         "IS_CONTINUOUS_BATCHING": lambda args: args["ssm_state_indices"] is not None,
+        "HAS_INITIAL_STATE_MASK": lambda args: args["has_initial_state"] is not None,
     }
 )
 @triton.autotune(
@@ -54,6 +55,7 @@ def chunk_gated_delta_rule_fwd_kernel_h_blockdim64(
     cu_seqlens,
     chunk_offsets,
     ssm_state_indices,
+    has_initial_state,
     T,
     H: tl.constexpr,
     Hg: tl.constexpr,
@@ -64,6 +66,7 @@ def chunk_gated_delta_rule_fwd_kernel_h_blockdim64(
     stride_init_state_token: tl.constexpr,
     stride_final_state_token: tl.constexpr,
     stride_indices_seq: tl.constexpr,
+    stride_has_initial_state: tl.constexpr,
     USE_G: tl.constexpr,
     USE_GK: tl.constexpr,
     USE_INITIAL_STATE: tl.constexpr,
@@ -71,6 +74,7 @@ def chunk_gated_delta_rule_fwd_kernel_h_blockdim64(
     SAVE_NEW_VALUE: tl.constexpr,
     IS_VARLEN: tl.constexpr,
     IS_CONTINUOUS_BATCHING: tl.constexpr,
+    HAS_INITIAL_STATE_MASK: tl.constexpr,
 ):
     i_v, i_nh = tl.program_id(0), tl.program_id(1)
     i_n, i_h = i_nh // H, i_nh % H
@@ -114,7 +118,16 @@ def chunk_gated_delta_rule_fwd_kernel_h_blockdim64(
                 ssm_state_indices + i_n * stride_indices_seq
             ).to(tl.int64)
             if state_idx > 0:
-                h0 = h0 + state_idx * stride_init_state_token + i_h * V * K
+                if HAS_INITIAL_STATE_MASK:
+                    has_init = tl.load(
+                        has_initial_state + i_n * stride_has_initial_state
+                    )
+                    if has_init:
+                        h0 = h0 + state_idx * stride_init_state_token + i_h * V * K
+                    else:
+                        should_load = False
+                else:
+                    h0 = h0 + state_idx * stride_init_state_token + i_h * V * K
             else:
                 should_load = False
         else:
@@ -479,6 +492,7 @@ def chunk_gated_delta_rule_fwd_h(
     chunk_indices: torch.Tensor | None = None,
     chunk_offsets: torch.Tensor | None = None,
     ssm_state_indices: torch.Tensor | None = None,
+    has_initial_state: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     # This kernel is slightly different from fla to support Q/K with different head numbers.
     # In fla, Q/K always have the same head number, so Hg is always equal to H.
@@ -502,10 +516,14 @@ def chunk_gated_delta_rule_fwd_h(
         stride_init_state_token = initial_state.stride(0)
         stride_final_state_token = initial_state.stride(0)
         final_state = initial_state if output_final_state else None
+        stride_has_initial_state = (
+            has_initial_state.stride(0) if has_initial_state is not None else 1
+        )
     else:
         stride_indices_seq = 1
         stride_init_state_token = 1
         stride_final_state_token = 1
+        stride_has_initial_state = 1
         final_state = (
             k.new_empty(N, H, V, K, dtype=torch.float32) if output_final_state else None
         )
@@ -530,6 +548,7 @@ def chunk_gated_delta_rule_fwd_h(
         cu_seqlens=cu_seqlens,
         chunk_offsets=chunk_offsets,
         ssm_state_indices=ssm_state_indices,
+        has_initial_state=has_initial_state,
         T=T,
         H=H,
         Hg=Hg,
@@ -539,5 +558,6 @@ def chunk_gated_delta_rule_fwd_h(
         stride_init_state_token=stride_init_state_token,
         stride_final_state_token=stride_final_state_token,
         stride_indices_seq=stride_indices_seq,
+        stride_has_initial_state=stride_has_initial_state,
     )
     return h, v_new, final_state

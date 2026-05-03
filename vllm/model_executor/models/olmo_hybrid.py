@@ -548,9 +548,6 @@ class OlmoHybridGatedDeltaNet(nn.Module, MambaBase):
             core_attn_out_spec, last_recurrent_state = None, None
 
         if attn_metadata.num_prefills > 0:
-            zero_indices = non_spec_state_indices_tensor[~has_initial_state]
-            ssm_state[zero_indices] = 0
-
             (
                 core_attn_out_non_spec,
                 last_recurrent_state,
@@ -565,6 +562,7 @@ class OlmoHybridGatedDeltaNet(nn.Module, MambaBase):
                 cu_seqlens=non_spec_query_start_loc,
                 use_qk_l2norm_in_kernel=True,
                 ssm_state_indices=non_spec_state_indices_tensor,
+                has_initial_state=has_initial_state,
             )
         elif attn_metadata.num_decodes > 0:
             core_attn_out_non_spec, last_recurrent_state = (

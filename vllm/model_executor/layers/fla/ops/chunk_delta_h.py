@@ -230,11 +230,11 @@ def chunk_gated_delta_rule_fwd_kernel_h_blockdim64(
         last_idx = min((i_t.to(tl.int64) + 1) * BT, T) - 1
         if USE_G:
             m_t = (i_t.to(tl.int64) * BT + tl.arange(0, BT)) < T
-            b_g_last = tl.load(g + bos * H + last_idx * H + i_h).to(tl.float32)
+            b_g_last = tl.load(g + bos * H + last_idx * H + i_h)
             p_g = tl.make_block_ptr(
                 g + bos * H + i_h, (T,), (H,), (i_t * BT,), (BT,), (0,)
             )
-            b_g = tl.load(p_g, boundary_check=(0,)).to(tl.float32)
+            b_g = tl.load(p_g, boundary_check=(0,))
             b_v = b_v * tl.where(m_t, exp(b_g_last - b_g), 0)[:, None]
             b_g_last = exp(b_g_last)
             b_h1 *= b_g_last
@@ -302,7 +302,6 @@ def chunk_gated_delta_rule_fwd_kernel_h_blockdim64(
             )
             b_k = tl.load(p_k, boundary_check=(0, 1))
             b_h4 += tl.trans(tl.dot(b_k, b_v))
-
     # epilogue
     if STORE_FINAL_STATE:
         should_store = True

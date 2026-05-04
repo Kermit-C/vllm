@@ -175,7 +175,7 @@ class ChunkGatedDeltaRule(CustomOp):
         if ssm_state_indices is not None:
             assert has_initial_state is not None
             gathered_initial = initial_state[ssm_state_indices].contiguous()
-            gathered_initial[~has_initial_state] = 0
+            gathered_initial[~has_initial_state, ...] = 0
             o, final_state = fi_chunk_gated_delta_rule(
                 q=q,
                 k=k,
